@@ -249,8 +249,8 @@ select,.action {
   </main>
 
   <div class="footer">
-    <span>🖱️ 왼쪽 클릭: 열기 · 오른쪽 클릭: 깃발</span>
-    <span>📱 모바일: 칸을 길게 눌러 깃발 표시</span>
+    <span>🖱️ 좌클릭: 열기 · 우클릭: 깃발 · 좌+우 동시 클릭: 주변 칸 열기</span>
+    <span>📱 모바일: 길게 눌러 깃발 · 열린 숫자 칸 다시 탭: 주변 칸 열기</span>
   </div>
 </div>
 
@@ -264,7 +264,7 @@ select,.action {
 
   const $ = id => document.getElementById(id);
   let game, timerId = null, startedAt = 0, seconds = 0;
-  let touchTimer = null, longPressed = false;
+  let touchTimer = null, longPressed = false, chordHandledAt = 0, chordHandledIndex = -1;
 
   function startGame() {
     clearInterval(timerId);
@@ -349,9 +349,26 @@ select,.action {
 
       updateCell(cell,i);
 
-      cell.addEventListener('click',() => {
+      // 마우스 좌+우 버튼을 함께 누르면 열린 숫자 칸의 주변을 한꺼번에 연다.
+      // 모바일에서는 열린 숫자 칸을 다시 탭해도 같은 기능을 실행한다.
+      cell.addEventListener('mousedown',e => {
+        if (e.buttons === 3 && game.opened.has(i)) {
+          e.preventDefault();
+          chordHandledAt = Date.now();
+          chordHandledIndex = i;
+          chord(i);
+        }
+      });
+
+      cell.addEventListener('click',e => {
         if (longPressed) {
           longPressed = false;
+          return;
+        }
+        if (game.opened.has(i)) {
+          if (e.pointerType === 'touch' || window.matchMedia('(pointer: coarse)').matches) {
+            chord(i);
+          }
           return;
         }
         openCell(i);
@@ -359,6 +376,8 @@ select,.action {
 
       cell.addEventListener('contextmenu',e => {
         e.preventDefault();
+        // 좌+우 동시 클릭으로 처리된 직후의 우클릭 메뉴는 깃발로 처리하지 않는다.
+        if (chordHandledIndex === i && Date.now() - chordHandledAt < 500) return;
         toggleFlag(i);
       });
 
@@ -396,7 +415,6 @@ select,.action {
 
     if (opened) {
       cell.classList.add('opened');
-      cell.disabled = true;
 
       if (mine) {
         cell.classList.add('mine');
@@ -540,6 +558,30 @@ select,.action {
     }
   }
 
+  function chord(i) {
+    if (game.over || !game.opened.has(i)) return;
+
+    const number = game.numbers[i];
+    if (number <= 0) return;
+
+    const around = neighbors(i);
+    const flagCount = around.filter(n => game.flags.has(n)).length;
+
+    // 숫자와 주변 깃발 수가 일치할 때만 열린다.
+    if (flagCount !== number) {
+      setStatus(`이 칸은 ${number}를 가리켜요. 주변 깃발 수를 확인하세요.`, '');
+      return;
+    }
+
+    const targets = around.filter(n => !game.opened.has(n) && !game.flags.has(n));
+    if (!targets.length) return;
+
+    for (const target of targets) {
+      if (game.over) break;
+      openCell(target);
+    }
+  }
+
   function toggleFlag(i) {
     if (game.over || game.opened.has(i)) return;
 
@@ -590,7 +632,8 @@ select,.action {
     alert(
       '왼쪽 클릭: 칸 열기\\n'+
       '오른쪽 클릭: 깃발 꽂기/제거\\n'+
-      '모바일: 칸을 길게 누르기\\n'+
+      '열린 숫자 칸에서 좌+우 동시 클릭: 주변 칸 열기\\n'+
+      '모바일: 길게 눌러 깃발, 열린 숫자 칸 다시 탭해 주변 칸 열기\\n'+
       '첫 번째 칸과 주변은 안전합니다.'
     );
   });
